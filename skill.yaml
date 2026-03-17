@@ -1,0 +1,24 @@
+name: openclaw-manager
+display_name: OpenClaw Manager
+version: 0.1.0
+description: >
+  OpenClaw-native manager skill that adds a local control plane, durable state,
+  attention queue, snapshots, and HumanClaw bridge hooks for real work.
+entry:
+  bootstrap: src/skill/bootstrap.ts
+commands:
+  - /tasks
+  - /resume
+  - /share
+  - /bind
+  - /focus
+  - /graph
+  - /digest
+  - /checkpoint
+  - /close
+  - /adopt
+sidecar:
+  api: http://127.0.0.1:4318
+  health: /health
+state_root: ~/.openclaw/skills/manager
+

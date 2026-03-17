@@ -1,0 +1,3 @@
+display_name: OpenClaw Manager
+short_description: Local control plane and HumanClaw bridge for OpenClaw.
+default_prompt: Adopt threads into local sessions, checkpoint work, manage attention, create snapshots, and sync compact artifacts into HumanClaw without uploading raw chat transcripts.
