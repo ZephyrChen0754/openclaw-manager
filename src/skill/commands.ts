@@ -6,6 +6,7 @@ import { CapabilityFactService } from '../telemetry/capability-facts';
 import { renderDigestMarkdown } from '../exporters/markdown-report';
 import { listConnectorAdapters } from '../connectors/registry';
 import { ShadowService } from '../control-plane/shadow-service';
+import { describePendingPromotion } from '../control-plane/shadow-classifier';
 
 export const buildCommandRegistry = (
   sessions: SessionService,
@@ -53,6 +54,18 @@ export const buildCommandRegistry = (
     const driftView = await attention.driftView();
     const promotionQueue = await shadows.listPromotionQueue();
     const threadShadows = await shadows.listShadows();
+    const threadObservations = threadShadows
+      .filter((shadow) => !shadow.linked_session_id && shadow.state !== 'archived' && shadow.state !== 'promoted')
+      .map((shadow) => ({
+        shadow_id: shadow.shadow_id,
+        title: shadow.title,
+        state: shadow.state,
+        promotion_score: shadow.promotion_score,
+        effective_turn_count: shadow.effective_turn_count,
+        noise_turn_count: shadow.noise_turn_count,
+        last_signal_kind: shadow.last_signal_kind,
+        pending_reason: describePendingPromotion(shadow),
+      }));
     return {
       session_map: sessionMap,
       focus: {
@@ -61,6 +74,7 @@ export const buildCommandRegistry = (
       },
       promotion_queue: promotionQueue,
       thread_shadows: threadShadows,
+      thread_observations: threadObservations,
       risk_view: riskView,
       drift_view: driftView,
       markdown: renderDigestMarkdown({

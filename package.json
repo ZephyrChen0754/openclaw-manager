@@ -1,6 +1,6 @@
 {
   "name": "openclaw-manager",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": false,
   "description": "OpenClaw-native control plane and durable state sidecar.",
   "license": "MIT",

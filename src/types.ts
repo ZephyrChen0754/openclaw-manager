@@ -42,7 +42,8 @@ export type AttentionKind = 'blocked' | 'waiting_human' | 'stale' | 'desynced' |
 export type ShadowState = 'observed' | 'candidate' | 'promoted' | 'archived';
 
 export type PromotionReason =
-  | 'turn_threshold'
+  | 'task_intent'
+  | 'context_payload'
   | 'tool_called'
   | 'artifact_created'
   | 'skill_invoked'
@@ -51,6 +52,14 @@ export type PromotionReason =
   | 'connector_followup'
   | 'manual_adopt'
   | 'high_priority';
+
+export type ShadowSignalKind =
+  | 'noise'
+  | 'context_payload'
+  | 'task_intent'
+  | 'execution_signal'
+  | 'blocker_signal'
+  | 'manual_priority';
 
 export interface SessionScores {
   urgency_score: number;
@@ -88,7 +97,13 @@ export interface ThreadShadow {
   title: string;
   latest_summary: string;
   turn_count: number;
+  effective_turn_count: number;
+  noise_turn_count: number;
+  promotion_score: number;
   last_message_at: string;
+  last_effective_at: string | null;
+  last_signal_kind: ShadowSignalKind | null;
+  hard_promotion_ready: boolean;
   state: ShadowState;
   promotion_reasons: PromotionReason[];
   linked_session_id: string | null;
@@ -275,10 +290,15 @@ export interface PromotionQueueEntry {
   source_thread_key: string;
   state: ShadowState;
   turn_count: number;
+  effective_turn_count: number;
+  noise_turn_count: number;
   promotion_reasons: PromotionReason[];
   promotion_score: number;
   latest_summary: string;
   last_message_at: string;
+  last_signal_kind: ShadowSignalKind | null;
+  hard_promotion_ready: boolean;
+  pending_reason: string;
   linked_session_id: string | null;
 }
 

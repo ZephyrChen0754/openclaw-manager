@@ -16,6 +16,7 @@ import { BindingService } from './binding-service';
 import { EventService } from './event-service';
 import { SessionService } from './session-service';
 import { SpoolService } from './spool-service';
+import { classifyInboundMessage, describePendingPromotion } from './shadow-classifier';
 
 const summarize = (text: string, max = 160) => {
   const normalized = text.replace(/\s+/g, ' ').trim();
@@ -29,16 +30,6 @@ const uniqueStrings = (items: string[]) => Array.from(new Set(items.map((item) =
 const asRecord = (value: unknown) =>
   typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 
-const inferHighPriority = (message: NormalizedInboundMessage) => {
-  const metadata = asRecord(message.metadata);
-  return metadata.high_priority === true || metadata.priority === 'high';
-};
-
-const needsConnectorFollowup = (message: NormalizedInboundMessage) => {
-  const metadata = asRecord(message.metadata);
-  return metadata.requires_followup === true || message.message_type === 'followup_required';
-};
-
 const threadTitle = (message: NormalizedInboundMessage) => {
   const metadata = asRecord(message.metadata);
   const explicit =
@@ -49,72 +40,22 @@ const threadTitle = (message: NormalizedInboundMessage) => {
   return explicit || `Observed ${message.source_type} thread`;
 };
 
-const promotionScore = (shadow: ThreadShadow) => {
-  const recencyHours = Math.max(0, (Date.now() - new Date(shadow.last_message_at).getTime()) / 36e5);
-  const recencyBonus = Math.max(0, 20 - recencyHours * 2);
-  return Math.round(
-    shadow.turn_count * 12 +
-      shadow.promotion_reasons.length * 15 +
-      (shadow.high_priority ? 30 : 0) +
-      (shadow.source_type !== 'chat' ? 6 : 0) +
-      recencyBonus
-  );
-};
+const observedArchiveHours = 24 * 7;
+const candidateArchiveHours = 24 * 14;
 
-const toQueueEntry = (shadow: ThreadShadow): PromotionQueueEntry => ({
-  shadow_id: shadow.shadow_id,
-  title: shadow.title,
-  source_type: shadow.source_type,
-  source_thread_key: shadow.source_thread_key,
-  state: shadow.state,
-  turn_count: shadow.turn_count,
-  promotion_reasons: shadow.promotion_reasons,
-  promotion_score: promotionScore(shadow),
-  latest_summary: shadow.latest_summary,
-  last_message_at: shadow.last_message_at,
-  linked_session_id: shadow.linked_session_id,
-});
+const hoursSince = (iso: string) => (Date.now() - new Date(iso).getTime()) / 36e5;
 
-const detectPromotionReasons = (
-  shadow: ThreadShadow,
-  message: NormalizedInboundMessage,
-  options: {
-    manual_adopt?: boolean;
-    high_priority?: boolean;
-  } = {}
-): PromotionReason[] => {
-  const metadata = asRecord(message.metadata);
-  const next = [...shadow.promotion_reasons];
-
-  if (shadow.turn_count >= 3) {
-    next.push('turn_threshold');
+const shouldAutoArchive = (shadow: ThreadShadow) => {
+  if (shadow.linked_session_id || shadow.state === 'promoted' || shadow.archived_at) {
+    return false;
   }
-  if (message.message_type === 'tool_called' || metadata.tool_called === true) {
-    next.push('tool_called');
+  if (shadow.state === 'observed' && shadow.promotion_score === 0) {
+    return hoursSince(shadow.updated_at) >= observedArchiveHours;
   }
-  if (message.message_type === 'artifact_created' || metadata.artifact_created === true) {
-    next.push('artifact_created');
+  if (shadow.state === 'candidate' && shadow.last_effective_at) {
+    return hoursSince(shadow.last_effective_at) >= candidateArchiveHours;
   }
-  if (message.message_type === 'skill_invoked' || metadata.skill_invoked === true) {
-    next.push('skill_invoked');
-  }
-  if (message.message_type === 'blocked' || metadata.current_state === 'blocked') {
-    next.push('blocked');
-  }
-  if (message.message_type === 'waiting_human' || metadata.current_state === 'waiting_human') {
-    next.push('waiting_human');
-  }
-  if (needsConnectorFollowup(message)) {
-    next.push('connector_followup');
-  }
-  if (options.manual_adopt) {
-    next.push('manual_adopt');
-  }
-  if (options.high_priority || inferHighPriority(message)) {
-    next.push('high_priority');
-  }
-
-  return uniqueReasons(next);
+  return false;
 };
 
 const defaultObjective = (shadow: ThreadShadow) => {
@@ -134,20 +75,60 @@ export class ShadowService {
     private readonly spoolService: SpoolService
   ) {}
 
-  private async readShadows() {
+  private async readShadowsRaw() {
     return this.store.readJson<ThreadShadow[]>(this.store.threadShadowsFile, []);
   }
 
+  private toQueueEntry(shadow: ThreadShadow): PromotionQueueEntry {
+    return {
+      shadow_id: shadow.shadow_id,
+      title: shadow.title,
+      source_type: shadow.source_type,
+      source_thread_key: shadow.source_thread_key,
+      state: shadow.state,
+      turn_count: shadow.turn_count,
+      effective_turn_count: shadow.effective_turn_count,
+      noise_turn_count: shadow.noise_turn_count,
+      promotion_reasons: shadow.promotion_reasons,
+      promotion_score: shadow.promotion_score,
+      latest_summary: shadow.latest_summary,
+      last_message_at: shadow.last_message_at,
+      last_signal_kind: shadow.last_signal_kind,
+      hard_promotion_ready: shadow.hard_promotion_ready,
+      pending_reason: describePendingPromotion(shadow),
+      linked_session_id: shadow.linked_session_id,
+    };
+  }
+
   private async writeShadows(shadows: ThreadShadow[]) {
-    const normalized = shadows.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    const now = nowIso();
+    const normalized = shadows
+      .map((shadow) =>
+        shouldAutoArchive(shadow)
+          ? {
+              ...shadow,
+              state: 'archived' as const,
+              archived_at: shadow.archived_at || now,
+              updated_at: now,
+            }
+          : shadow
+      )
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+
     const queue = normalized
-      .filter((shadow) => !shadow.linked_session_id && shadow.state !== 'archived')
-      .filter((shadow) => shadow.state === 'candidate' || shadow.turn_count >= 2 || shadow.high_priority)
-      .map(toQueueEntry)
+      .filter((shadow) => !shadow.linked_session_id && shadow.state !== 'archived' && shadow.state !== 'promoted')
+      .filter((shadow) => shadow.promotion_score >= 2)
+      .map((shadow) => this.toQueueEntry(shadow))
       .sort((a, b) => b.promotion_score - a.promotion_score || b.last_message_at.localeCompare(a.last_message_at));
 
     await writeThreadShadows(this.store, normalized);
     await writePromotionQueue(this.store, queue);
+  }
+
+  private async readManagedShadows() {
+    const shadows = await this.readShadowsRaw();
+    await this.writeShadows(shadows);
+    return this.readShadowsRaw();
   }
 
   private shadowState(shadow: ThreadShadow, shouldPromote: boolean) {
@@ -157,10 +138,20 @@ export class ShadowService {
     if (shadow.linked_session_id || shouldPromote) {
       return 'promoted' as const;
     }
-    if (shadow.turn_count >= 2 || shadow.high_priority) {
+    if (shadow.promotion_score >= 1 || shadow.effective_turn_count > 0 || shadow.high_priority) {
       return 'candidate' as const;
     }
     return 'observed' as const;
+  }
+
+  private shouldPromote(shadow: ThreadShadow) {
+    if (shadow.linked_session_id) {
+      return false;
+    }
+    if (shadow.hard_promotion_ready) {
+      return true;
+    }
+    return shadow.effective_turn_count >= 2 && shadow.promotion_score >= 3;
   }
 
   private upsertObservedShadow(
@@ -169,6 +160,7 @@ export class ShadowService {
     options: {
       linked_session_id?: string | null;
       manual_adopt?: boolean;
+      manual_promote?: boolean;
       high_priority?: boolean;
     } = {}
   ) {
@@ -178,8 +170,10 @@ export class ShadowService {
     );
     const existing = index >= 0 ? shadows[index] : null;
     const now = nowIso();
+    const classification = classifyInboundMessage(message, options);
+    const metadata = asRecord(message.metadata);
     const highPriority =
-      (options.high_priority ?? inferHighPriority(message)) || existing?.high_priority || false;
+      Boolean(options.high_priority) || metadata.high_priority === true || existing?.high_priority || false;
     const base: ThreadShadow =
       existing || {
         shadow_id: uid('shadow'),
@@ -188,7 +182,13 @@ export class ShadowService {
         title: threadTitle(message),
         latest_summary: summarize(message.content),
         turn_count: 0,
+        effective_turn_count: 0,
+        noise_turn_count: 0,
+        promotion_score: 0,
         last_message_at: message.timestamp || now,
+        last_effective_at: null,
+        last_signal_kind: null,
+        hard_promotion_ready: false,
         state: 'observed',
         promotion_reasons: [],
         linked_session_id: null,
@@ -199,28 +199,43 @@ export class ShadowService {
         archived_at: null,
       };
 
+    const nextPromotionScore =
+      base.promotion_score + classification.score_delta + (classification.connector_followup ? 1 : 0);
+
     const next: ThreadShadow = {
       ...base,
       title: base.title || threadTitle(message),
       latest_summary: summarize(message.content) || base.latest_summary,
       turn_count: base.turn_count + 1,
+      effective_turn_count: base.effective_turn_count + (classification.effective ? 1 : 0),
+      noise_turn_count: base.noise_turn_count + (classification.signal_kind === 'noise' ? 1 : 0),
+      promotion_score: nextPromotionScore,
       last_message_at: message.timestamp || now,
+      last_effective_at: classification.effective ? message.timestamp || now : base.last_effective_at,
+      last_signal_kind: classification.signal_kind,
+      hard_promotion_ready: classification.hard_promotion_ready,
       high_priority: highPriority,
       linked_session_id: options.linked_session_id ?? base.linked_session_id,
       metadata: {
         ...base.metadata,
-        ...asRecord(message.metadata),
+        ...metadata,
         last_message_type: message.message_type,
         last_message_id: message.source_message_id || null,
         last_author_id: message.source_author_id || null,
         last_author_name: message.source_author_name || null,
+        connector_followup: classification.connector_followup,
       },
       updated_at: now,
-      archived_at: options.linked_session_id ? null : base.archived_at,
+      archived_at: null,
     };
-    const reasons = detectPromotionReasons(next, message, options);
-    const shouldPromote = !next.linked_session_id && reasons.length > 0;
-    next.promotion_reasons = reasons;
+
+    next.promotion_reasons = uniqueReasons([
+      ...base.promotion_reasons,
+      ...classification.promotion_reasons,
+      ...(classification.connector_followup ? (['connector_followup'] as PromotionReason[]) : []),
+    ]);
+
+    const shouldPromote = this.shouldPromote(next);
     next.state = this.shadowState(next, shouldPromote);
 
     if (index >= 0) {
@@ -229,7 +244,7 @@ export class ShadowService {
       shadows.push(next);
     }
 
-    return { shadow: next, shouldPromote, reasons };
+    return { shadow: next, shouldPromote };
   }
 
   private async appendInboundToSession(session: SessionRecord, message: NormalizedInboundMessage) {
@@ -261,21 +276,22 @@ export class ShadowService {
   }
 
   async listShadows() {
-    const shadows = await this.readShadows();
+    const shadows = await this.readManagedShadows();
     return shadows.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   }
 
   async listPromotionQueue() {
+    await this.readManagedShadows();
     return this.store.readJson<PromotionQueueEntry[]>(this.store.promotionQueueFile, []);
   }
 
   async getShadow(shadowId: string) {
-    const shadows = await this.readShadows();
+    const shadows = await this.readManagedShadows();
     return shadows.find((shadow) => shadow.shadow_id === shadowId) || null;
   }
 
   async findByThread(sourceType: string, sourceThreadKey: string) {
-    const shadows = await this.readShadows();
+    const shadows = await this.readManagedShadows();
     return (
       shadows.find(
         (shadow) =>
@@ -286,12 +302,12 @@ export class ShadowService {
 
   async focusCandidates(limit = 5) {
     const queue = await this.listPromotionQueue();
-    return queue.slice(0, limit);
+    return queue.filter((item) => item.promotion_score >= 3 || item.hard_promotion_ready).slice(0, limit);
   }
 
   async archiveShadow(shadowId: string) {
     return withNamedLock('manager:thread-shadows', async () => {
-      const shadows = await this.readShadows();
+      const shadows = await this.readManagedShadows();
       const index = shadows.findIndex((shadow) => shadow.shadow_id === shadowId);
       if (index < 0) {
         throw new Error(`Thread shadow not found: ${shadowId}`);
@@ -352,6 +368,7 @@ export class ShadowService {
       state: 'promoted',
       linked_session_id: session.session_id,
       promotion_reasons: uniqueReasons([...shadow.promotion_reasons, ...extraReasons]),
+      hard_promotion_ready: false,
       updated_at: nowIso(),
       archived_at: null,
     };
@@ -373,7 +390,7 @@ export class ShadowService {
     extraReasons: PromotionReason[] = []
   ) {
     return withNamedLock('manager:thread-shadows', async () => {
-      const shadows = await this.readShadows();
+      const shadows = await this.readManagedShadows();
       const index = shadows.findIndex((shadow) => shadow.shadow_id === shadowId);
       if (index < 0) {
         throw new Error(`Thread shadow not found: ${shadowId}`);
@@ -386,24 +403,29 @@ export class ShadowService {
     return withNamedLock('manager:thread-shadows', async () => {
       const shadowId = typeof input.shadow_id === 'string' ? input.shadow_id : null;
       if (shadowId) {
-        const shadows = await this.readShadows();
+        const shadows = await this.readManagedShadows();
         const index = shadows.findIndex((shadow) => shadow.shadow_id === shadowId);
         if (index < 0) {
           throw new Error(`Thread shadow not found: ${shadowId}`);
         }
-        return this.promoteFromShadows(shadows, index, {
-          title: typeof input.title === 'string' ? input.title : undefined,
-          objective: typeof input.objective === 'string' ? input.objective : undefined,
-          owner: typeof input.owner === 'string' ? input.owner : undefined,
-          source_channels: Array.isArray(input.source_channels) ? (input.source_channels as string[]) : undefined,
-          priority:
-            input.priority === 'low' || input.priority === 'normal' || input.priority === 'high'
-              ? input.priority
-              : undefined,
-          tags: Array.isArray(input.tags) ? (input.tags as string[]) : undefined,
-          initial_message: typeof input.initial_message === 'string' ? input.initial_message : undefined,
-          metadata: asRecord(input.metadata),
-        }, ['manual_adopt']);
+        return this.promoteFromShadows(
+          shadows,
+          index,
+          {
+            title: typeof input.title === 'string' ? input.title : undefined,
+            objective: typeof input.objective === 'string' ? input.objective : undefined,
+            owner: typeof input.owner === 'string' ? input.owner : undefined,
+            source_channels: Array.isArray(input.source_channels) ? (input.source_channels as string[]) : undefined,
+            priority:
+              input.priority === 'low' || input.priority === 'normal' || input.priority === 'high'
+                ? input.priority
+                : undefined,
+            tags: Array.isArray(input.tags) ? (input.tags as string[]) : undefined,
+            initial_message: typeof input.initial_message === 'string' ? input.initial_message : undefined,
+            metadata: asRecord(input.metadata),
+          },
+          ['manual_adopt']
+        );
       }
 
       const sourceType = typeof input.source_type === 'string' ? input.source_type : 'chat';
@@ -434,7 +456,7 @@ export class ShadowService {
         },
       };
 
-      const shadows = await this.readShadows();
+      const shadows = await this.readManagedShadows();
       const { shadow } = this.upsertObservedShadow(shadows, message, {
         manual_adopt: true,
         high_priority: input.priority === 'high',
@@ -465,7 +487,7 @@ export class ShadowService {
   async handleInbound(message: NormalizedInboundMessage) {
     return withNamedLock('manager:thread-shadows', async () => {
       const binding = await this.bindingService.resolve(message.source_type, message.source_thread_key);
-      const shadows = await this.readShadows();
+      const shadows = await this.readManagedShadows();
       const linkedShadow =
         shadows.find(
           (shadow) =>
@@ -492,6 +514,10 @@ export class ShadowService {
             accepted: true,
             mode: 'promoted' as const,
             shadow_id: shadow.shadow_id,
+            shadow_state: shadow.state,
+            promotion_score: shadow.promotion_score,
+            effective_turn_count: shadow.effective_turn_count,
+            hard_promotion_ready: shadow.hard_promotion_ready,
             session_id: updatedSession.session_id,
             active_run_id: updatedSession.active_run_id,
           };
@@ -515,6 +541,10 @@ export class ShadowService {
           accepted: true,
           mode: 'promoted' as const,
           shadow_id: promoted.shadow.shadow_id,
+          shadow_state: promoted.shadow.state,
+          promotion_score: promoted.shadow.promotion_score,
+          effective_turn_count: promoted.shadow.effective_turn_count,
+          hard_promotion_ready: promoted.shadow.hard_promotion_ready,
           session_id: promoted.session.session_id,
           active_run_id: promoted.session.active_run_id,
         };
@@ -525,6 +555,10 @@ export class ShadowService {
         accepted: true,
         mode: 'shadowed' as const,
         shadow_id: shadow.shadow_id,
+        shadow_state: shadow.state,
+        promotion_score: shadow.promotion_score,
+        effective_turn_count: shadow.effective_turn_count,
+        hard_promotion_ready: shadow.hard_promotion_ready,
       };
     });
   }

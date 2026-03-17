@@ -181,14 +181,27 @@ A shadow is promoted into a session when any of these conditions is met:
 
 - explicit `/adopt`
 - explicit `/promote <shadow>`
-- three or more effective turns in the same thread
 - `tool_called`
 - `artifact_created`
 - `skill_invoked`
 - `blocked`
 - `waiting_human`
-- external connector follow-up is explicitly required
-- the thread is marked high priority
+- at least two effective turns plus a promotion score of three or higher
+
+Promotion scoring is conservative by default:
+
+- `task_intent` adds `+2`
+- `context_payload` adds `+1`
+- manual priority markers add `+2`
+- connector follow-up adds `+1`
+- low-value chatter adds `+0`
+
+This means:
+
+- three greetings still stay shadowed
+- a task request plus useful context promotes
+- a task request plus `ok/好的/收到` stays shadowed
+- connector follow-up alone becomes a candidate shadow, not a promoted session
 
 Otherwise the manager still tracks the thread locally and exposes it through `/threads`, `/tasks`, and `/focus`.
 

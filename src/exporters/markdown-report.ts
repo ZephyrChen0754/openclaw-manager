@@ -42,7 +42,11 @@ ${sessionMap.length ? sessionMap.map((entry) => `- ${entry.title} [${entry.curre
 ${focus.top_items.length ? focus.top_items.map((item) => `- ${item.summary} -> ${item.recommended_action}`).join('\n') : '- none'}
 
 ## Promotion queue
-${focus.candidate_shadows.length ? focus.candidate_shadows.map((item) => `- ${item.title} [${item.state}] :: score=${item.promotion_score}`).join('\n') : '- none'}
+${focus.candidate_shadows.length
+  ? focus.candidate_shadows
+      .map((item) => `- ${item.title} [${item.state}] :: score=${item.promotion_score} :: ${item.pending_reason}`)
+      .join('\n')
+  : '- none'}
 
 ## Risk view
 ${riskView.length ? riskView.map((item) => `- ${item.title} [${item.risk_kind}] :: ${item.summary}`).join('\n') : '- none'}
