@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import { EventRecord, EventType, nowIso, uid } from '../types';
 import { FsStore } from '../storage/fs-store';
 
@@ -20,5 +21,17 @@ export class EventService {
   async list(sessionId: string, runId: string) {
     return this.store.readJsonl<EventRecord>(this.store.eventsFile(sessionId, runId));
   }
-}
 
+  async listAllForSession(sessionId: string) {
+    const runsDir = this.store.runsDir(sessionId);
+    let runIds: string[] = [];
+    try {
+      const entries = await fs.readdir(runsDir, { withFileTypes: true });
+      runIds = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    } catch {
+      runIds = [];
+    }
+    const lists = await Promise.all(runIds.map((runId) => this.list(sessionId, runId)));
+    return lists.flat().sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  }
+}

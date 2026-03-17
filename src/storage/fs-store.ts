@@ -21,6 +21,14 @@ export class FsStore {
     return path.join(this.rootDir, 'connectors');
   }
 
+  get connectorInboxDir() {
+    return path.join(this.connectorsDir, 'inbox');
+  }
+
+  get connectorConfigsFile() {
+    return path.join(this.connectorsDir, 'configs.json');
+  }
+
   get snapshotsDir() {
     return path.join(this.rootDir, 'snapshots');
   }
@@ -57,6 +65,14 @@ export class FsStore {
     return path.join(this.sessionDir(sessionId), 'attention.json');
   }
 
+  shareDir(sessionId: string) {
+    return path.join(this.sessionDir(sessionId), 'share');
+  }
+
+  artifactsDir(sessionId: string) {
+    return path.join(this.sessionDir(sessionId), 'artifacts');
+  }
+
   runFile(sessionId: string, runId: string) {
     return path.join(this.runDir(sessionId, runId), 'run.json');
   }
@@ -77,12 +93,16 @@ export class FsStore {
     return path.join(this.runDir(sessionId, runId), 'skill_traces.jsonl');
   }
 
+  snapshotDir(snapshotId: string) {
+    return path.join(this.snapshotsDir, snapshotId);
+  }
+
   async ensureLayout() {
     const required = [
       this.sessionsDir,
       this.indexesDir,
       this.connectorsDir,
-      path.join(this.connectorsDir, 'inbox'),
+      this.connectorInboxDir,
       this.snapshotsDir,
       this.exportsDir,
     ];
@@ -95,13 +115,14 @@ export class FsStore {
     await this.writeJsonIfMissing(path.join(this.indexesDir, 'active_sessions.json'), []);
     await this.writeJsonIfMissing(path.join(this.indexesDir, 'attention_queue.json'), []);
     await this.writeJsonIfMissing(path.join(this.connectorsDir, 'bindings.json'), []);
+    await this.writeJsonIfMissing(this.connectorConfigsFile, []);
     await this.writeTextIfMissing(this.capabilityFactsFile, '');
   }
 
   async ensureSessionLayout(sessionId: string, runId?: string) {
     await fs.mkdir(this.sessionDir(sessionId), { recursive: true });
-    await fs.mkdir(path.join(this.sessionDir(sessionId), 'share'), { recursive: true });
-    await fs.mkdir(path.join(this.sessionDir(sessionId), 'artifacts'), { recursive: true });
+    await fs.mkdir(this.shareDir(sessionId), { recursive: true });
+    await fs.mkdir(this.artifactsDir(sessionId), { recursive: true });
     await fs.mkdir(this.runsDir(sessionId), { recursive: true });
     if (runId) {
       await fs.mkdir(this.runDir(sessionId, runId), { recursive: true });
@@ -141,6 +162,13 @@ export class FsStore {
     await fs.writeFile(filePath, text, 'utf8');
   }
 
+  async readText(filePath: string, fallback = '') {
+    if (!(await this.exists(filePath))) {
+      return fallback;
+    }
+    return fs.readFile(filePath, 'utf8');
+  }
+
   async writeTextIfMissing(filePath: string, text: string) {
     if (!(await this.exists(filePath))) {
       await this.writeText(filePath, text);
@@ -164,4 +192,3 @@ export class FsStore {
       .map((line) => JSON.parse(line) as T);
   }
 }
-

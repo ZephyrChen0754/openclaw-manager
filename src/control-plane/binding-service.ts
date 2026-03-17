@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { BindingRecord, nowIso, uid } from '../types';
+import { BindingRecord, ConnectorConfig, nowIso, uid } from '../types';
 import { FsStore } from '../storage/fs-store';
 
 export class BindingService {
@@ -11,6 +11,10 @@ export class BindingService {
 
   async list(): Promise<BindingRecord[]> {
     return this.store.readJson<BindingRecord[]>(this.bindingsFile(), []);
+  }
+
+  async listConnectorConfigs(): Promise<ConnectorConfig[]> {
+    return this.store.readJson<ConnectorConfig[]>(this.store.connectorConfigsFile, []);
   }
 
   async resolve(channel: string, externalThreadKey: string) {
@@ -46,5 +50,13 @@ export class BindingService {
     const filtered = bindings.filter((binding) => binding.binding_id !== next.binding_id);
     await this.store.writeJson(this.bindingsFile(), [...filtered, next]);
     return next;
+  }
+
+  async upsertConnectorConfig(config: ConnectorConfig) {
+    const configs = await this.listConnectorConfigs();
+    const filtered = configs.filter((item) => !(item.connector === config.connector && item.identity_key === config.identity_key));
+    const next = [...filtered, config];
+    await this.store.writeJson(this.store.connectorConfigsFile, next);
+    return config;
   }
 }

@@ -1,46 +1,36 @@
 # OpenClaw Manager
 
-OpenClaw Manager is the local control plane for OpenClaw.
+OpenClaw Manager is the local control plane and durable state layer for OpenClaw.
 
-It turns chat-shaped work into durable local state:
+It upgrades chat-shaped work into:
 
-- `session`
-- `run`
-- `event`
-- `checkpoint`
-- `attention`
-- `capability_fact`
+- recoverable `session` threads
+- structured `run` attempts
+- append-only `event` and `skill_trace` logs
+- local `checkpoint` and summary state
+- scored `attention` views
+- reusable `capability_fact` outputs
+- redacted snapshots and share manifests
 
-It is designed to pair with **HumanClaw**, which stays the remote network for:
+HumanClaw remains the remote collaboration, market, and governance network. OpenClaw Manager remains the local source of truth for work state.
 
-- public collaboration
-- demand / relay / mission routing
-- points settlement
-- reusable skill packs
-- councils, staffing, and governance
+## What is implemented
 
-The boundary is strict:
+- OpenClaw-native bootstrap, commands, and maintenance hooks
+- filesystem-first durable state under `~/.openclaw/skills/manager/`
+- session/run/event/checkpoint control plane
+- resumable work from checkpoint + summary + spool preview
+- attention queue plus session map, focus, risk, and drift views
+- connector normalization for Telegram, WeCom, Email, and GitHub
+- run evidence, task, and capability snapshots
+- capability fact generation, graph summary, and anonymized export
+- HumanClaw bridge sync for snapshots, attention escalations, capability facts, and share links
 
-- **OpenClaw Manager** is the source of truth for local work state.
-- **HumanClaw** is the source of truth for cross-agent collaboration, public market behavior, settlement, and governance.
-
-## What This Repo Gives You
-
-- a local sidecar API
-- filesystem-first durable state
-- append-only event and skill trace logs
-- snapshot export
-- attention queue
-- capability fact generation
-- compact bridge sync into HumanClaw
-
-Raw chat transcripts are **not** uploaded to HumanClaw by default.
-
-## Repository Layout
+## Repository layout
 
 ```text
 openclaw-manager/
-|- .env.example
+|- AGENTS.md
 |- README.md
 |- SKILL.md
 |- skill.yaml
@@ -62,24 +52,20 @@ openclaw-manager/
 
 ## Requirements
 
-- Node.js 20+ recommended
+- Node.js 20+
 - npm 10+
 - a HumanClaw API key if you want bridge sync
 
 ## Download
-
-After you publish this repo to GitHub, users can install it with:
 
 ```bash
 git clone https://github.com/ZephyrChen0754/openclaw-manager.git
 cd openclaw-manager
 ```
 
-## One-Click Install
+## One-click install
 
 ### Windows
-
-Install the runtime only:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
@@ -93,8 +79,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -InstallSkill
 
 ### macOS / Linux
 
-Install the runtime only:
-
 ```bash
 bash scripts/install.sh
 ```
@@ -107,7 +91,7 @@ bash scripts/install.sh --install-skill
 
 ## Configure
 
-Copy `.env.example` to `.env.local` if the install script has not already done it.
+Copy `.env.example` to `.env.local`.
 
 Minimum values:
 
@@ -118,19 +102,35 @@ OPENCLAW_MANAGER_NODE_ID=local-node-01
 PORT=4318
 ```
 
-State defaults to:
+Default state root:
 
 ```text
 ~/.openclaw/skills/manager/
 ```
 
-That directory contains:
+State layout:
 
-- `sessions/`
-- `indexes/`
-- `connectors/`
-- `snapshots/`
-- `exports/`
+```text
+sessions/<session_id>/session.json
+sessions/<session_id>/summary.md
+sessions/<session_id>/attention.json
+sessions/<session_id>/share/
+sessions/<session_id>/artifacts/
+sessions/<session_id>/runs/<run_id>/run.json
+sessions/<session_id>/runs/<run_id>/events.jsonl
+sessions/<session_id>/runs/<run_id>/spool.jsonl
+sessions/<session_id>/runs/<run_id>/checkpoint.json
+sessions/<session_id>/runs/<run_id>/skill_traces.jsonl
+indexes/sessions.json
+indexes/active_sessions.json
+indexes/attention_queue.json
+indexes/capability_facts.jsonl
+connectors/bindings.json
+connectors/configs.json
+connectors/inbox/
+snapshots/
+exports/
+```
 
 ## Run
 
@@ -147,13 +147,13 @@ npm run build
 npm start
 ```
 
-Bootstrap the runtime and verify command registration:
+Bootstrap the runtime and inspect the registered commands:
 
 ```bash
 npm run bootstrap
 ```
 
-## Local Commands
+## Local commands
 
 - `/tasks`
 - `/resume <session>`
@@ -170,14 +170,25 @@ npm run bootstrap
 
 - `GET /health`
 - `GET /sessions`
+- `GET /sessions/map`
+- `GET /sessions/digest`
+- `GET /sessions/:id`
 - `POST /sessions/adopt`
 - `POST /sessions/:id/resume`
 - `POST /sessions/:id/checkpoint`
 - `POST /sessions/:id/close`
 - `GET /attention`
+- `GET /attention/focus`
+- `GET /attention/risk`
+- `GET /attention/drift`
 - `POST /inbound-message`
+- `GET /connectors`
+- `POST /connectors/:name/config`
+- `POST /connectors/:name/ingest`
 - `POST /share/:sessionId`
+- `GET /graph`
 - `GET /exports/capability-facts`
+- `GET /exports/capability-facts/anonymized`
 - `POST /bridge/check-in`
 
 Default local address:
@@ -186,7 +197,33 @@ Default local address:
 http://127.0.0.1:4318
 ```
 
-## HumanClaw Bridge
+## Connector model
+
+Each external source is normalized before it touches the control plane.
+
+Currently implemented source adapters:
+
+- Telegram
+- WeCom
+- Email
+- GitHub
+
+Each adapter produces a canonical inbound message, resolves or creates a binding, then routes the update into an existing session or a resumed run.
+
+## Capability graph and exports
+
+Closed work produces:
+
+- closure metrics
+- skill traces
+- scenario signatures
+- capability facts
+- capability graph summaries
+- anonymized fact export payloads
+
+Markdown and HTML exports are generated locally and remain redacted by default.
+
+## HumanClaw bridge
 
 Manager syncs only compact artifacts:
 
@@ -210,20 +247,7 @@ When HumanClaw returns:
 - `seek_help`
 - `suggested_skill_action`
 
-those should be written back into a local manager `session` or `run`, not left only in chat.
-
-## Connector Model
-
-Phase 1 in this repo gives you the normalized local control plane and inbound-message shape.
-
-Planned connector families are already stubbed for:
-
-- Telegram
-- WeCom
-- Email
-- GitHub
-
-Each connector should normalize inbound data before it enters a session.
+OpenClaw Manager materializes those results into local sessions or runs instead of leaving them only in chat.
 
 ## Documentation
 
@@ -233,14 +257,7 @@ Each connector should normalize inbound data before it enters a session.
 - connector protocol: [docs/connector-protocol.md](docs/connector-protocol.md)
 - capability facts: [docs/capability-facts.md](docs/capability-facts.md)
 
-## Publish Checklist
-
-Before pushing to GitHub:
-
-1. Set the final repo name to `openclaw-manager`.
-2. Decide whether to keep the default HumanClaw base URL or point to your own deployment.
-3. Add a real `HUMANCLAW_API_KEY` only in local `.env.local`, never in git.
-4. Run:
+## Verify before publishing changes
 
 ```bash
 npm run check

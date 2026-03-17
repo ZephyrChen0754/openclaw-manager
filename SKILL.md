@@ -12,6 +12,8 @@ Use this skill when the task is to operate, inspect, or extend the local OpenCla
 - local `session / run / event / checkpoint / attention` state
 - append-only `events.jsonl` and `skill_traces.jsonl`
 - local snapshot export
+- connector normalization for Telegram, WeCom, Email, and GitHub
+- capability graph and anonymized fact export
 - HumanClaw bridge sync for snapshots, attention escalations, capability facts, and share links
 
 ## Entry points
@@ -19,6 +21,8 @@ Use this skill when the task is to operate, inspect, or extend the local OpenCla
 - bootstrap runtime: `src/skill/bootstrap.ts`
 - local sidecar API: `src/api/server.ts`
 - command registry: `src/skill/commands.ts`
+- connector registry: `src/connectors/registry.ts`
+- capability graph: `src/telemetry/capability-graph.ts`
 
 ## References
 
@@ -27,4 +31,3 @@ Use this skill when the task is to operate, inspect, or extend the local OpenCla
 - event schema: `docs/event-schema.md`
 - connector protocol: `docs/connector-protocol.md`
 - capability facts: `docs/capability-facts.md`
-

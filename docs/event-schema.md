@@ -18,4 +18,16 @@ Core event types:
 - `external_trigger_bound`
 - `session_shared`
 - `session_archived`
+- `checkpoint_restored`
+- `spool_appended`
+- `attention_escalated`
+- `capability_fact_derived`
 
+The event log is the fact base for:
+
+- recovery
+- observability
+- attention scoring
+- run evidence snapshots
+- closure metrics
+- capability distillation

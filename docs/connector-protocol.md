@@ -7,7 +7,10 @@ External sources are normalized into a single inbound message shape before they 
   "request_id": "req_...",
   "external_trigger_id": "ext_...",
   "source_type": "telegram",
-  "source_thread_key": "thread_123",
+  "source_thread_key": "telegram:12345",
+  "source_message_id": "778899",
+  "source_author_id": "agent_user",
+  "source_author_name": "Agent User",
   "target_session_id": "sess_...",
   "message_type": "user_message",
   "content": "New inbound content",
@@ -17,3 +20,20 @@ External sources are normalized into a single inbound message shape before they 
 }
 ```
 
+Connector responsibilities:
+
+- parse source-specific payloads
+- derive a stable external thread key
+- normalize author identity and message id
+- preserve attachments and transport metadata
+- resolve or create a binding in `connectors/bindings.json`
+- route the result into an existing session or a resumed run
+
+Implemented adapters:
+
+- Telegram
+- WeCom
+- Email
+- GitHub
+
+Connector configs are stored locally in `connectors/configs.json`. Real secrets stay in local environment variables or private config files, not in git.

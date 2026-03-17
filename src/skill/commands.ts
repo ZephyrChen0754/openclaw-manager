@@ -3,6 +3,8 @@ import { BindingService } from '../control-plane/binding-service';
 import { SessionService } from '../control-plane/session-service';
 import { ShareService } from '../control-plane/share-service';
 import { CapabilityFactService } from '../telemetry/capability-facts';
+import { renderDigestMarkdown } from '../exporters/markdown-report';
+import { listConnectorAdapters } from '../connectors/registry';
 
 export const buildCommandRegistry = (
   sessions: SessionService,
@@ -11,29 +13,44 @@ export const buildCommandRegistry = (
   share: ShareService,
   capabilityFacts: CapabilityFactService
 ) => ({
-  '/tasks': () => sessions.listSessions(),
+  '/tasks': async () => ({
+    session_map: await attention.sessionMap(),
+    connectors: listConnectorAdapters().map((adapter) => adapter.source_type),
+  }),
   '/resume': (sessionId: string) => sessions.resume(sessionId),
-  '/share': async (sessionId: string) => {
+  '/share': async (sessionId: string, input?: { snapshot_kind?: 'task_snapshot' | 'run_evidence' | 'capability_snapshot'; related_run_id?: string }) => {
     const session = await sessions.getSession(sessionId);
     if (!session) {
       throw new Error('Session not found.');
     }
-    return share.createSnapshot(session, 'task_snapshot');
+    return share.createSnapshot(session, input?.snapshot_kind || 'task_snapshot', {
+      related_run_id: input?.related_run_id || session.active_run_id,
+    });
   },
-  '/bind': (input: { channel: string; external_thread_key: string; session_id: string }) => bindings.add(input),
-  '/focus': () => attention.list(),
-  '/graph': () => capabilityFacts.listAll(),
+  '/bind': async (input: { channel: string; external_thread_key: string; session_id: string; identity_key?: string }) => {
+    const binding = await bindings.add(input);
+    const adapter = listConnectorAdapters().find((item) => item.source_type === input.channel);
+    if (adapter) {
+      await bindings.upsertConnectorConfig(adapter.defaultConfig(input.identity_key || `${input.channel}-default`));
+    }
+    return binding;
+  },
+  '/focus': () => attention.focus(),
+  '/graph': () => capabilityFacts.graphSummary(),
   '/digest': async () => {
-    const sessionList = await sessions.listSessions();
-    return sessionList.map((session) => ({
-      session_id: session.session_id,
-      title: session.title,
-      current_state: session.current_state,
-      blockers: session.blockers,
-      pending_human_decisions: session.pending_human_decisions,
-    }));
+    const sessionMap = await attention.sessionMap();
+    const focus = await attention.focus();
+    const riskView = await attention.riskView();
+    const driftView = await attention.driftView();
+    return {
+      session_map: sessionMap,
+      focus,
+      risk_view: riskView,
+      drift_view: driftView,
+      markdown: renderDigestMarkdown({ sessionMap, focus, riskView, driftView }),
+    };
   },
-  '/checkpoint': (sessionId: string) => sessions.checkpoint(sessionId),
+  '/checkpoint': (sessionId: string, input?: Record<string, unknown>) => sessions.checkpoint(sessionId, input || {}),
   '/close': (sessionId: string, input?: Record<string, unknown>) => sessions.close(sessionId, input || {}),
   '/adopt': (input: Record<string, unknown>) =>
     sessions.adopt({
@@ -43,6 +60,7 @@ export const buildCommandRegistry = (
       source_channels: Array.isArray(input.source_channels) ? (input.source_channels as string[]) : ['chat'],
       tags: Array.isArray(input.tags) ? (input.tags as string[]) : [],
       initial_message: (input.initial_message as string) || '',
+      metadata: typeof input.metadata === 'object' && input.metadata ? (input.metadata as Record<string, unknown>) : {},
     }),
 });
 

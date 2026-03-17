@@ -28,26 +28,28 @@ ${checkpoint.next_human_actions.length ? checkpoint.next_human_actions.map((item
 export class CheckpointService {
   constructor(private readonly store: FsStore) {}
 
+  async get(sessionId: string, runId: string) {
+    return this.store.readJson<CheckpointRecord | null>(this.store.checkpointFile(sessionId, runId), null);
+  }
+
   async upsert(session: SessionRecord, checkpointInput: CheckpointInput = {}) {
     if (!session.active_run_id) {
       throw new Error('Session has no active run.');
     }
 
-    const existing = await this.store.readJson<CheckpointRecord | null>(
-      this.store.checkpointFile(session.session_id, session.active_run_id),
-      null
-    );
+    const existing = await this.get(session.session_id, session.active_run_id);
 
     const checkpoint: CheckpointRecord = {
       session_id: session.session_id,
       active_run_id: session.active_run_id,
-      current_state: session.current_state,
+      current_state: checkpointInput.current_state ?? session.current_state,
       blockers: checkpointInput.blockers ?? existing?.blockers ?? session.blockers ?? [],
       pending_human_decisions:
         checkpointInput.pending_human_decisions ?? existing?.pending_human_decisions ?? session.pending_human_decisions ?? [],
       artifact_refs: checkpointInput.artifact_refs ?? existing?.artifact_refs ?? [],
       next_machine_actions: checkpointInput.next_machine_actions ?? existing?.next_machine_actions ?? [],
       next_human_actions: checkpointInput.next_human_actions ?? existing?.next_human_actions ?? [],
+      summary_version: (existing?.summary_version || 0) + 1,
       updated_at: nowIso(),
     };
 
@@ -56,4 +58,3 @@ export class CheckpointService {
     return checkpoint;
   }
 }
-
