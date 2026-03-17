@@ -1,6 +1,6 @@
 ---
 name: openclaw-manager
-description: Install or operate a local OpenClaw manager skill that adds durable session/run state, attention management, snapshots, and HumanClaw bridge sync for real work.
+description: Install or operate a standalone local OpenClaw manager skill that adds shadow-first thread observation, durable session/run state, attention management, snapshots, connector normalization, and capability reports for real work.
 ---
 
 # OpenClaw Manager
@@ -10,11 +10,12 @@ Use this skill when the task is to operate, inspect, or extend the local OpenCla
 ## What this skill owns
 
 - local `session / run / event / checkpoint / attention` state
+- shadow-first `thread_shadow` observation and promotion queue
 - append-only `events.jsonl` and `skill_traces.jsonl`
 - local snapshot export
 - connector normalization for Telegram, WeCom, Email, and GitHub
 - capability graph and anonymized fact export
-- HumanClaw bridge sync for snapshots, attention escalations, capability facts, and share links
+- standalone sidecar bootstrap and local command surface
 
 ## Entry points
 

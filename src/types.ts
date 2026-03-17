@@ -39,6 +39,19 @@ export type SnapshotKind = 'task_snapshot' | 'run_evidence' | 'capability_snapsh
 
 export type AttentionKind = 'blocked' | 'waiting_human' | 'stale' | 'desynced' | 'summary_drift' | 'high_value';
 
+export type ShadowState = 'observed' | 'candidate' | 'promoted' | 'archived';
+
+export type PromotionReason =
+  | 'turn_threshold'
+  | 'tool_called'
+  | 'artifact_created'
+  | 'skill_invoked'
+  | 'blocked'
+  | 'waiting_human'
+  | 'connector_followup'
+  | 'manual_adopt'
+  | 'high_priority';
+
 export interface SessionScores {
   urgency_score: number;
   value_score: number;
@@ -63,6 +76,24 @@ export interface SessionRecord {
   tags: string[];
   metadata: Record<string, unknown>;
   scores: SessionScores;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+export interface ThreadShadow {
+  shadow_id: string;
+  source_type: string;
+  source_thread_key: string;
+  title: string;
+  latest_summary: string;
+  turn_count: number;
+  last_message_at: string;
+  state: ShadowState;
+  promotion_reasons: PromotionReason[];
+  linked_session_id: string | null;
+  high_priority: boolean;
+  metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   archived_at: string | null;
@@ -232,9 +263,23 @@ export interface SpoolEntry {
   spool_id: string;
   session_id: string;
   run_id: string;
-  entry_type: 'normalized_inbound' | 'resume_context' | 'bridge_action' | 'artifact_note';
+  entry_type: 'normalized_inbound' | 'resume_context' | 'artifact_note';
   payload: Record<string, unknown>;
   created_at: string;
+}
+
+export interface PromotionQueueEntry {
+  shadow_id: string;
+  title: string;
+  source_type: string;
+  source_thread_key: string;
+  state: ShadowState;
+  turn_count: number;
+  promotion_reasons: PromotionReason[];
+  promotion_score: number;
+  latest_summary: string;
+  last_message_at: string;
+  linked_session_id: string | null;
 }
 
 export interface SessionMapEntry extends SessionScores {
@@ -252,6 +297,7 @@ export interface SessionMapEntry extends SessionScores {
 export interface FocusDigest {
   generated_at: string;
   top_items: AttentionUnit[];
+  candidate_shadows: PromotionQueueEntry[];
   ignored_items: number;
 }
 
@@ -291,11 +337,6 @@ export interface CapabilityGraphSummary {
   total_facts: number;
   nodes: CapabilityGraphNode[];
   top_scenarios: CapabilityGraphNode[];
-}
-
-export interface ManagerBridgePayload {
-  manager_node_id: string;
-  manager_session_id: string;
 }
 
 export const defaultSessionScores = (): SessionScores => ({

@@ -1,6 +1,21 @@
 # Session Model
 
-The primary work object is `Session`, not a raw chat thread.
+`ThreadShadow` is the observation layer. `Session` is the promoted work object.
+
+Each shadow owns:
+
+- `shadow_id`
+- `source_type`
+- `source_thread_key`
+- `title`
+- `latest_summary`
+- `turn_count`
+- `last_message_at`
+- `state`
+- `promotion_reasons`
+- `linked_session_id`
+
+The primary managed work object is still `Session`, not a raw chat thread.
 
 Each session owns:
 

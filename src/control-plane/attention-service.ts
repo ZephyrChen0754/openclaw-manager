@@ -31,7 +31,7 @@ const priorityFromScore = (score: number): AttentionUnit['priority'] => {
 const recommendedAction = (kind: AttentionKind) => {
   switch (kind) {
     case 'blocked':
-      return 'Unblock the session or escalate it to HumanClaw.';
+      return 'Unblock the session, capture the blocker, or explicitly escalate it for local follow-up.';
     case 'waiting_human':
       return 'Provide the pending human decision and resume the run.';
     case 'stale':
@@ -232,6 +232,7 @@ export class AttentionService {
     return {
       generated_at: nowIso(),
       top_items: items.slice(0, limit),
+      candidate_shadows: [],
       ignored_items: Math.max(0, items.length - limit),
     };
   }

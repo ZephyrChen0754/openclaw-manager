@@ -1,30 +1,33 @@
 # OpenClaw Manager
 
-OpenClaw Manager is the local control plane and durable state layer for OpenClaw.
+OpenClaw Manager is a standalone local control plane for OpenClaw.
 
-It upgrades chat-shaped work into:
+It keeps work filesystem-first under `~/.openclaw/skills/manager/` and uses a shadow-first model:
 
-- recoverable `session` threads
-- structured `run` attempts
-- append-only `event` and `skill_trace` logs
-- local `checkpoint` and summary state
-- scored `attention` views
-- reusable `capability_fact` outputs
-- redacted snapshots and share manifests
+- every thread is observed as a lightweight `ThreadShadow`
+- only meaningful threads are promoted into durable `Session` + `Run` state
+- local summaries, checkpoints, attention, snapshots, and capability facts stay under local control
 
-HumanClaw remains the remote collaboration, market, and governance network. OpenClaw Manager remains the local source of truth for work state.
+## Core model
+
+- `ThreadShadow`: pre-session observation for chat and connector threads
+- `Session`: promoted work thread with durable summary and state
+- `Run`: one concrete execution attempt inside a session
+- `Event`: append-only JSONL fact log
+- `Checkpoint`: resumable state for the active run
+- `AttentionUnit`: scored control-plane alert
+- `CapabilityFact`: reusable closure fact derived from real work
 
 ## What is implemented
 
-- OpenClaw-native bootstrap, commands, maintenance hooks, and sidecar auto-start
-- filesystem-first durable state under `~/.openclaw/skills/manager/`
-- session/run/event/checkpoint control plane
-- resumable work from checkpoint + summary + spool preview
-- attention queue plus session map, focus, risk, and drift views
-- connector normalization for Telegram, WeCom, Email, and GitHub
-- run evidence, task, and capability snapshots
-- capability fact generation, graph summary, and anonymized export
-- HumanClaw bridge sync for snapshots, attention escalations, capability facts, and share links
+- standalone OpenClaw-native bootstrap and sidecar auto-start
+- shadow-first thread interception and promotion queue
+- filesystem-first durable state
+- resumable `session / run / event / checkpoint / spool` control plane
+- attention queue plus `session map / focus / risk / drift` views
+- source-specific connector normalization for Telegram, WeCom, Email, and GitHub
+- redacted task snapshots, run evidence snapshots, and capability snapshots
+- capability facts, graph summary, anonymized export, and markdown reports
 
 ## Repository layout
 
@@ -40,7 +43,6 @@ openclaw-manager/
 |- scripts/
 |- src/
 |  |- api/
-|  |- bridge/
 |  |- connectors/
 |  |- control-plane/
 |  |- exporters/
@@ -54,7 +56,6 @@ openclaw-manager/
 
 - Node.js 20+
 - npm 10+
-- a HumanClaw API key if you want bridge sync
 
 ## Download
 
@@ -93,12 +94,13 @@ bash scripts/install.sh --install-skill
 
 Copy `.env.example` to `.env.local`.
 
-Minimum values:
+Typical values:
 
 ```env
-HUMANCLAW_BASE_URL=http://8.134.81.173/humanclaw/api
-HUMANCLAW_API_KEY=hc_live_xxx
+OPENCLAW_MANAGER_STATE_ROOT=
 OPENCLAW_MANAGER_NODE_ID=local-node-01
+OPENCLAW_MANAGER_SIDECAR_URL=http://127.0.0.1:4318
+OPENCLAW_MANAGER_NO_AUTOSTART=0
 PORT=4318
 ```
 
@@ -124,6 +126,8 @@ sessions/<session_id>/runs/<run_id>/skill_traces.jsonl
 indexes/sessions.json
 indexes/active_sessions.json
 indexes/attention_queue.json
+indexes/thread_shadows.json
+indexes/promotion_queue.json
 indexes/capability_facts.jsonl
 connectors/bindings.json
 connectors/configs.json
@@ -156,6 +160,7 @@ npm run bootstrap
 ## Local commands
 
 - `/tasks`
+- `/threads`
 - `/resume <session>`
 - `/share <session>`
 - `/bind <channel>`
@@ -165,6 +170,27 @@ npm run bootstrap
 - `/checkpoint`
 - `/close`
 - `/adopt`
+- `/promote <shadow>`
+- `/archive-thread <shadow>`
+
+## Shadow-first behavior
+
+Inbound messages first update a `ThreadShadow`.
+
+A shadow is promoted into a session when any of these conditions is met:
+
+- explicit `/adopt`
+- explicit `/promote <shadow>`
+- three or more effective turns in the same thread
+- `tool_called`
+- `artifact_created`
+- `skill_invoked`
+- `blocked`
+- `waiting_human`
+- external connector follow-up is explicitly required
+- the thread is marked high priority
+
+Otherwise the manager still tracks the thread locally and exposes it through `/threads`, `/tasks`, and `/focus`.
 
 ## Sidecar API
 
@@ -177,6 +203,10 @@ npm run bootstrap
 - `POST /sessions/:id/resume`
 - `POST /sessions/:id/checkpoint`
 - `POST /sessions/:id/close`
+- `GET /threads`
+- `GET /threads/:id`
+- `POST /threads/:id/promote`
+- `POST /threads/:id/archive`
 - `GET /attention`
 - `GET /attention/focus`
 - `GET /attention/risk`
@@ -190,7 +220,6 @@ npm run bootstrap
 - `GET /graph`
 - `GET /exports/capability-facts`
 - `GET /exports/capability-facts/anonymized`
-- `POST /bridge/check-in`
 
 Default local address:
 
@@ -200,7 +229,7 @@ http://127.0.0.1:4318
 
 ## Connector model
 
-Each external source is normalized before it touches the control plane.
+Each external source is normalized before it reaches the control plane.
 
 Currently implemented source adapters:
 
@@ -209,9 +238,16 @@ Currently implemented source adapters:
 - Email
 - GitHub
 
-Each adapter produces a canonical inbound message, resolves or creates a binding, then routes the update into an existing session or a resumed run. Webhook-style ingest and file/body-backed poll flows are both supported.
+Each adapter:
 
-## Capability graph and exports
+1. normalizes source-specific payloads into a canonical inbound message
+2. resolves existing thread bindings
+3. updates or creates a `ThreadShadow`
+4. promotes only when promotion rules say the thread deserves full durable state
+
+Webhook-style ingest and file/body-backed poll flows are both supported.
+
+## Capability facts and exports
 
 Closed work produces:
 
@@ -223,32 +259,6 @@ Closed work produces:
 - anonymized fact export payloads
 
 Markdown and HTML exports are generated locally and remain redacted by default.
-
-## HumanClaw bridge
-
-Manager syncs only compact artifacts:
-
-- snapshots
-- attention escalations
-- capability facts
-- share links
-
-Bridge endpoints on HumanClaw:
-
-- `POST /api/manager/snapshots`
-- `POST /api/manager/attention-escalations`
-- `POST /api/manager/capability-facts`
-- `POST /api/manager/share-links`
-
-When HumanClaw returns:
-
-- `starter_mission`
-- `resume_work`
-- `offer_help_public`
-- `seek_help`
-- `suggested_skill_action`
-
-OpenClaw Manager materializes those results into local sessions or runs instead of leaving them only in chat.
 
 ## Documentation
 
@@ -263,6 +273,7 @@ OpenClaw Manager materializes those results into local sessions or runs instead 
 ```bash
 npm run check
 npm run build
+node scripts/smoke-test.cjs
 ```
 
 ## License

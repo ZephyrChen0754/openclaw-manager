@@ -15,7 +15,7 @@ Implementation rules:
 
 - keep durable state filesystem-first under `~/.openclaw/skills/manager/`
 - keep raw chat transcripts local by default
-- sync only compact summaries, snapshots, attention escalations, capability facts, and share refs to HumanClaw
+- treat `ThreadShadow` as the observation layer and `Session` as the promoted work object
 - treat `Session` as the primary work object and `Run` as a concrete execution attempt
 - append facts to JSONL logs instead of rewriting history
 

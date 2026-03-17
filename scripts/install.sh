@@ -64,5 +64,5 @@ if [[ "$INSTALL_SKILL" == "true" ]]; then
 fi
 echo ""
 echo "Next steps:"
-echo "1. Fill in .env.local with HUMANCLAW_API_KEY."
+echo "1. Review .env.local and adjust local manager settings if needed."
 echo "2. Start the sidecar with: npm run dev"

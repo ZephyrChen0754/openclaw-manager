@@ -26,8 +26,9 @@ Connector responsibilities:
 - derive a stable external thread key
 - normalize author identity and message id
 - preserve attachments and transport metadata
-- resolve or create a binding in `connectors/bindings.json`
-- route the result into an existing session or a resumed run
+- resolve existing bindings in `connectors/bindings.json`
+- update or create a `ThreadShadow`
+- promote only when promotion rules require full session tracking
 
 Implemented adapters:
 

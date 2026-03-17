@@ -32,4 +32,4 @@ The manager also derives a local capability graph summary:
 - failure rate
 - human intervention rate
 
-Exports are redacted by default. Raw chat transcripts are not uploaded to HumanClaw.
+Exports are redacted by default. Raw chat transcripts stay local unless the operator explicitly shares them elsewhere.

@@ -10,6 +10,7 @@ import { AttentionService } from '../control-plane/attention-service';
 import { BindingService } from '../control-plane/binding-service';
 import { ShareService } from '../control-plane/share-service';
 import { SpoolService } from '../control-plane/spool-service';
+import { ShadowService } from '../control-plane/shadow-service';
 import { SkillTraceService } from '../telemetry/skill-trace';
 import { CapabilityFactService } from '../telemetry/capability-facts';
 import { buildCommandRegistry } from './commands';
@@ -102,6 +103,14 @@ export const bootstrapManagerRuntime = async () => {
   const shareService = new ShareService(store, eventService, runService, checkpointService, spoolService);
   const skillTraceService = new SkillTraceService(store, eventService);
   const capabilityFactService = new CapabilityFactService(store, eventService, skillTraceService);
+  const shadowService = new ShadowService(
+    store,
+    sessionService,
+    eventService,
+    attentionService,
+    bindingService,
+    spoolService
+  );
 
   return {
     store,
@@ -113,9 +122,17 @@ export const bootstrapManagerRuntime = async () => {
     attentionService,
     bindingService,
     shareService,
+    shadowService,
     skillTraceService,
     capabilityFactService,
-    commands: buildCommandRegistry(sessionService, attentionService, bindingService, shareService, capabilityFactService),
+    commands: buildCommandRegistry(
+      sessionService,
+      attentionService,
+      bindingService,
+      shareService,
+      capabilityFactService,
+      shadowService
+    ),
   };
 };
 

@@ -1,14 +1,15 @@
 name: openclaw-manager
 display_name: OpenClaw Manager
-version: 0.2.0
+version: 0.3.0
 description: >
   OpenClaw-native manager skill that adds a local control plane, durable state,
-  connector normalization, attention views, snapshots, capability graph export,
-  and HumanClaw bridge hooks for real work.
+  shadow-first thread interception, connector normalization, attention views,
+  snapshots, and capability graph export for real work.
 entry:
   bootstrap: src/skill/bootstrap.ts
 commands:
   - /tasks
+  - /threads
   - /resume
   - /share
   - /bind
@@ -18,6 +19,8 @@ commands:
   - /checkpoint
   - /close
   - /adopt
+  - /promote
+  - /archive-thread
 sidecar:
   api: http://127.0.0.1:4318
   health: /health

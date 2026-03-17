@@ -45,6 +45,14 @@ export class FsStore {
     return path.join(this.indexesDir, 'capability_facts.jsonl');
   }
 
+  get threadShadowsFile() {
+    return path.join(this.indexesDir, 'thread_shadows.json');
+  }
+
+  get promotionQueueFile() {
+    return path.join(this.indexesDir, 'promotion_queue.json');
+  }
+
   sessionDir(sessionId: string) {
     return path.join(this.sessionsDir, sessionId);
   }
@@ -118,6 +126,8 @@ export class FsStore {
     await this.writeJsonIfMissing(path.join(this.indexesDir, 'sessions.json'), []);
     await this.writeJsonIfMissing(path.join(this.indexesDir, 'active_sessions.json'), []);
     await this.writeJsonIfMissing(path.join(this.indexesDir, 'attention_queue.json'), []);
+    await this.writeJsonIfMissing(this.threadShadowsFile, []);
+    await this.writeJsonIfMissing(this.promotionQueueFile, []);
     await this.writeJsonIfMissing(path.join(this.connectorsDir, 'bindings.json'), []);
     await this.writeJsonIfMissing(this.connectorConfigsFile, []);
     await this.writeTextIfMissing(this.capabilityFactsFile, '');

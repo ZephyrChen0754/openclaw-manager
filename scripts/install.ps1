@@ -55,7 +55,7 @@ try {
     }
     Write-Host ''
     Write-Host 'Next steps:'
-    Write-Host '1. Fill in .env.local with HUMANCLAW_API_KEY.'
+    Write-Host '1. Review .env.local and adjust local manager settings if needed.'
     Write-Host '2. Start the sidecar with: npm run dev'
 }
 finally {

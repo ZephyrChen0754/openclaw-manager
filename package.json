@@ -1,6 +1,6 @@
 {
   "name": "openclaw-manager",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": false,
   "description": "OpenClaw-native control plane and durable state sidecar.",
   "license": "MIT",
@@ -18,11 +18,11 @@
   },
   "keywords": [
     "openclaw",
-    "humanclaw",
     "agent",
     "control-plane",
     "skill",
-    "sidecar"
+    "sidecar",
+    "thread-shadow"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

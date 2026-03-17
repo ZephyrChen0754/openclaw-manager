@@ -5,16 +5,19 @@ import { ShareService } from '../control-plane/share-service';
 import { CapabilityFactService } from '../telemetry/capability-facts';
 import { renderDigestMarkdown } from '../exporters/markdown-report';
 import { listConnectorAdapters } from '../connectors/registry';
+import { ShadowService } from '../control-plane/shadow-service';
 
 export const buildCommandRegistry = (
   sessions: SessionService,
   attention: AttentionService,
   bindings: BindingService,
   share: ShareService,
-  capabilityFacts: CapabilityFactService
+  capabilityFacts: CapabilityFactService,
+  shadows: ShadowService
 ) => ({
   '/tasks': async () => ({
-    session_map: await attention.sessionMap(),
+    active_sessions: await attention.sessionMap(),
+    promotion_queue: await shadows.listPromotionQueue(),
     connectors: listConnectorAdapters().map((adapter) => adapter.source_type),
   }),
   '/resume': (sessionId: string) => sessions.resume(sessionId),
@@ -35,33 +38,61 @@ export const buildCommandRegistry = (
     }
     return binding;
   },
-  '/focus': () => attention.focus(),
+  '/focus': async () => {
+    const focus = await attention.focus();
+    return {
+      ...focus,
+      candidate_shadows: await shadows.focusCandidates(),
+    };
+  },
   '/graph': () => capabilityFacts.graphSummary(),
   '/digest': async () => {
     const sessionMap = await attention.sessionMap();
     const focus = await attention.focus();
     const riskView = await attention.riskView();
     const driftView = await attention.driftView();
+    const promotionQueue = await shadows.listPromotionQueue();
+    const threadShadows = await shadows.listShadows();
     return {
       session_map: sessionMap,
-      focus,
+      focus: {
+        ...focus,
+        candidate_shadows: promotionQueue.slice(0, 5),
+      },
+      promotion_queue: promotionQueue,
+      thread_shadows: threadShadows,
       risk_view: riskView,
       drift_view: driftView,
-      markdown: renderDigestMarkdown({ sessionMap, focus, riskView, driftView }),
+      markdown: renderDigestMarkdown({
+        sessionMap,
+        focus: {
+          ...focus,
+          candidate_shadows: promotionQueue.slice(0, 5),
+        },
+        riskView,
+        driftView,
+      }),
     };
   },
   '/checkpoint': (sessionId: string, input?: Record<string, unknown>) => sessions.checkpoint(sessionId, input || {}),
   '/close': (sessionId: string, input?: Record<string, unknown>) => sessions.close(sessionId, input || {}),
-  '/adopt': (input: Record<string, unknown>) =>
-    sessions.adopt({
-      title: String(input.title || 'Untitled session'),
-      objective: String(input.objective || 'Resume work from current chat'),
-      owner: (input.owner as string) || null,
-      source_channels: Array.isArray(input.source_channels) ? (input.source_channels as string[]) : ['chat'],
-      tags: Array.isArray(input.tags) ? (input.tags as string[]) : [],
-      initial_message: (input.initial_message as string) || '',
-      metadata: typeof input.metadata === 'object' && input.metadata ? (input.metadata as Record<string, unknown>) : {},
+  '/adopt': (input: Record<string, unknown>) => shadows.manualAdopt(input),
+  '/threads': () => shadows.listShadows(),
+  '/promote': (shadowId: string, input?: Record<string, unknown>) =>
+    shadows.promoteShadow(String(shadowId), {
+      title: typeof input?.title === 'string' ? input.title : undefined,
+      objective: typeof input?.objective === 'string' ? input.objective : undefined,
+      owner: typeof input?.owner === 'string' ? input.owner : undefined,
+      source_channels: Array.isArray(input?.source_channels) ? (input?.source_channels as string[]) : undefined,
+      priority:
+        input?.priority === 'low' || input?.priority === 'normal' || input?.priority === 'high'
+          ? input.priority
+          : undefined,
+      tags: Array.isArray(input?.tags) ? (input?.tags as string[]) : undefined,
+      initial_message: typeof input?.initial_message === 'string' ? input.initial_message : undefined,
+      metadata: typeof input?.metadata === 'object' && input.metadata ? (input.metadata as Record<string, unknown>) : {},
     }),
+  '/archive-thread': (shadowId: string) => shadows.archiveShadow(String(shadowId)),
 });
 
 export type CommandRegistry = ReturnType<typeof buildCommandRegistry>;
