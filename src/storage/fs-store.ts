@@ -25,6 +25,10 @@ export class FsStore {
     return path.join(this.connectorsDir, 'inbox');
   }
 
+  connectorInboxFile(connectorName: string) {
+    return path.join(this.connectorInboxDir, `${connectorName}.jsonl`);
+  }
+
   get connectorConfigsFile() {
     return path.join(this.connectorsDir, 'configs.json');
   }

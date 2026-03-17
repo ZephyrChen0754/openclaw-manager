@@ -10,7 +10,7 @@ import { ConnectorAdapter } from '../connectors/base';
 const isValidInbound = (body: Partial<NormalizedInboundMessage>) =>
   Boolean(body.source_type && body.source_thread_key && body.content);
 
-const processInboundMessage = async (
+export const processInboundMessage = async (
   message: NormalizedInboundMessage,
   deps: {
     sessionService: SessionService;

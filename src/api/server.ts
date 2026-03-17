@@ -1,7 +1,8 @@
+import fs from 'node:fs/promises';
 import express, { Request, Response } from 'express';
 import { bootstrapManagerRuntime } from '../skill/bootstrap';
 import { healthHandler } from './health';
-import { connectorInboundHandler, inboundHandler } from './inbound';
+import { connectorInboundHandler, inboundHandler, processInboundMessage } from './inbound';
 import { CloseSessionInput, ManagerBridgePayload } from '../types';
 import { HumanClawBridge } from '../bridge/humanclaw-bridge';
 import { getConnectorAdapter, listConnectorAdapters } from '../connectors/registry';
@@ -54,6 +55,20 @@ const materializeBridgeAction = async (
   const refreshed = await runtime.sessionService.refreshIndexes();
   await runtime.attentionService.refresh(refreshed);
   return session;
+};
+
+const drainConnectorInbox = async (filePath: string) => {
+  try {
+    const text = await fs.readFile(filePath, 'utf8');
+    await fs.writeFile(filePath, '', 'utf8');
+    return text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  } catch {
+    return [] as Record<string, unknown>[];
+  }
 };
 
 const startServer = async () => {
@@ -202,6 +217,41 @@ const startServer = async () => {
         runtime.bindingService,
         runtime.spoolService
       )(req, res);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/connectors/:name/poll', async (req: Request, res: Response, next: express.NextFunction) => {
+    const adapter = getConnectorAdapter(String(req.params.name));
+    if (!adapter) {
+      res.status(404).json({ error: 'Unknown connector.' });
+      return;
+    }
+    const payloads = Array.isArray(req.body?.messages)
+      ? (req.body.messages as Array<Record<string, unknown>>)
+      : await drainConnectorInbox(runtime.store.connectorInboxFile(adapter.source_type));
+    const results: Array<Record<string, unknown>> = [];
+    try {
+      for (const payload of payloads) {
+        const normalized = adapter.normalize(payload);
+        const result = await processInboundMessage(normalized, {
+          sessionService: runtime.sessionService,
+          eventService: runtime.eventService,
+          attentionService: runtime.attentionService,
+          bindingService: runtime.bindingService,
+          spoolService: runtime.spoolService,
+        });
+        results.push({
+          normalized,
+          result,
+        });
+      }
+      res.json({
+        connector: adapter.source_type,
+        polled_messages: payloads.length,
+        preview: results,
+      });
     } catch (error) {
       next(error);
     }

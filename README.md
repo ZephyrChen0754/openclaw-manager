@@ -16,7 +16,7 @@ HumanClaw remains the remote collaboration, market, and governance network. Open
 
 ## What is implemented
 
-- OpenClaw-native bootstrap, commands, and maintenance hooks
+- OpenClaw-native bootstrap, commands, maintenance hooks, and sidecar auto-start
 - filesystem-first durable state under `~/.openclaw/skills/manager/`
 - session/run/event/checkpoint control plane
 - resumable work from checkpoint + summary + spool preview
@@ -185,6 +185,7 @@ npm run bootstrap
 - `GET /connectors`
 - `POST /connectors/:name/config`
 - `POST /connectors/:name/ingest`
+- `POST /connectors/:name/poll`
 - `POST /share/:sessionId`
 - `GET /graph`
 - `GET /exports/capability-facts`
@@ -208,7 +209,7 @@ Currently implemented source adapters:
 - Email
 - GitHub
 
-Each adapter produces a canonical inbound message, resolves or creates a binding, then routes the update into an existing session or a resumed run.
+Each adapter produces a canonical inbound message, resolves or creates a binding, then routes the update into an existing session or a resumed run. Webhook-style ingest and file/body-backed poll flows are both supported.
 
 ## Capability graph and exports
 
