@@ -274,6 +274,12 @@ export interface ConnectorConfig {
   metadata?: Record<string, unknown>;
 }
 
+export interface ManagerSettings {
+  sidecar_autostart_consent: boolean;
+  consent_recorded_at: string | null;
+  consent_source: 'default' | 'install_script' | 'manual_command' | 'bootstrap_flag';
+}
+
 export interface SpoolEntry {
   spool_id: string;
   session_id: string;

@@ -6,6 +6,7 @@ import { connectorInboundHandler, inboundHandler, processInboundMessage } from '
 import { CloseSessionInput } from '../types';
 import { getConnectorAdapter, listConnectorAdapters } from '../connectors/registry';
 import { describePendingPromotion } from '../control-plane/shadow-classifier';
+import { resolveBindHost, resolvePort } from '../skill/local-config';
 
 const drainConnectorInbox = async (filePath: string) => {
   try {
@@ -271,10 +272,11 @@ const startServer = async () => {
     res.status(500).json({ error: error.message || 'Unexpected manager error.' });
   });
 
-  const port = Number(process.env.PORT || 4318);
+  const port = resolvePort();
+  const bindHost = resolveBindHost();
   return new Promise<void>((resolve) => {
-    app.listen(port, () => {
-      console.log(`OpenClaw Manager sidecar listening on ${port}`);
+    app.listen(port, bindHost, () => {
+      console.log(`OpenClaw Manager sidecar listening on ${bindHost}:${port}`);
       resolve();
     });
   });

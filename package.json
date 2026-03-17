@@ -1,6 +1,6 @@
 {
   "name": "openclaw-manager",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": false,
   "description": "OpenClaw-native control plane and durable state sidecar.",
   "license": "MIT",
@@ -29,7 +29,10 @@
     "dev": "tsx src/api/server.ts",
     "start": "node dist/api/server.js",
     "bootstrap": "tsx src/skill/bootstrap.ts",
+    "consent:autostart": "tsx src/skill/autostart-consent.ts --allow",
+    "consent:autostart:off": "tsx src/skill/autostart-consent.ts --deny",
     "check": "tsc -p tsconfig.json --noEmit",
+    "security:check": "node scripts/security-smoke.cjs",
     "install:windows": "powershell -ExecutionPolicy Bypass -File scripts/install.ps1",
     "install:unix": "bash scripts/install.sh"
   },

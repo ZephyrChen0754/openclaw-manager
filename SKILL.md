@@ -1,6 +1,6 @@
 ---
 name: openclaw-manager
-description: Install or operate a standalone local OpenClaw manager skill that adds shadow-first thread observation, durable session/run state, attention management, snapshots, connector normalization, and capability reports for real work.
+description: Install or operate a standalone local OpenClaw manager skill that adds shadow-first thread observation, durable session/run state, a loopback-only sidecar, attention management, snapshots, connector normalization, and capability reports for real work.
 ---
 
 # OpenClaw Manager
@@ -16,6 +16,8 @@ Use this skill when the task is to operate, inspect, or extend the local OpenCla
 - connector normalization for Telegram, WeCom, Email, and GitHub
 - capability graph and anonymized fact export
 - standalone sidecar bootstrap and local command surface
+- loopback-only sidecar by default
+- consent-gated sidecar autostart
 
 ## Entry points
 
@@ -32,3 +34,4 @@ Use this skill when the task is to operate, inspect, or extend the local OpenCla
 - event schema: `docs/event-schema.md`
 - connector protocol: `docs/connector-protocol.md`
 - capability facts: `docs/capability-facts.md`
+- security model: `SECURITY.md`

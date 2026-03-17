@@ -8,18 +8,29 @@ It keeps work filesystem-first under `~/.openclaw/skills/manager/` and uses a sh
 - only meaningful threads are promoted into durable `Session` + `Run` state
 - summaries, checkpoints, attention, snapshots, and capability facts stay local
 
-It is not a cloud service. It is a local skill plus sidecar that runs on your machine.
+It is not a cloud service. It is a local Node.js skill plus a local sidecar that runs on your machine.
+
+## Security at a glance
+
+- the sidecar binds to `127.0.0.1` by default
+- the sidecar does not auto-start until you explicitly allow it once
+- bootstrap only checks a local loopback health endpoint
+- raw chat transcripts are not uploaded anywhere by default
+- connectors do nothing externally until you explicitly configure them
+- state is stored locally under `~/.openclaw/skills/manager/`
+
+Read [SECURITY.md](SECURITY.md) for the exact environment variables, startup behavior, and connector boundaries.
 
 ## Who this is for
 
 - OpenClaw users who want a local manager for real work threads
 - developers and power users who are comfortable installing Node-based tools
-- teams that want resumable local state without uploading raw chat logs elsewhere
+- teams that want resumable local state without shipping raw logs elsewhere
 
 ## Who this is not for
 
 - people looking for a zero-config browser SaaS
-- users who do not want to install Node.js or run a local sidecar
+- users who do not want to install Node.js or run a local process
 - anyone expecting a hosted multi-user dashboard out of the box
 
 ## What problem it solves
@@ -44,7 +55,8 @@ OpenClaw conversations often disappear into long threads. OpenClaw Manager fixes
 
 ## What is implemented
 
-- standalone OpenClaw-native bootstrap and sidecar auto-start
+- standalone OpenClaw-native bootstrap with consent-gated sidecar autostart
+- loopback-only local sidecar API by default
 - shadow-first thread interception and promotion queue
 - filesystem-first durable state
 - resumable `session / run / event / checkpoint / spool` control plane
@@ -59,9 +71,9 @@ OpenClaw conversations often disappear into long threads. OpenClaw Manager fixes
 openclaw-manager/
 |- AGENTS.md
 |- README.md
+|- SECURITY.md
 |- SKILL.md
 |- skill.yaml
-|- agents/
 |- docs/
 |- schemas/
 |- scripts/
@@ -90,16 +102,22 @@ cd openclaw-manager
 
 ## Fastest path
 
-If you just want to try it quickly:
+If you want the shortest safe path:
 
 ```bash
-npm install
+npm ci
 npm run build
-npm run bootstrap
 npm run dev
 ```
 
-That gives you a running local sidecar at `http://127.0.0.1:4318`.
+That starts the local sidecar manually at `http://127.0.0.1:4318`.
+
+If you want future bootstrap runs to auto-start the local sidecar after explicit consent:
+
+```bash
+npm run consent:autostart
+npm run bootstrap
+```
 
 ## One-click install
 
@@ -127,6 +145,8 @@ Install the runtime and also copy the skill into `$CODEX_HOME/skills/openclaw-ma
 bash scripts/install.sh --install-skill
 ```
 
+The installer uses the official npm registry and `npm ci`. It does not use global `npm -g` installation.
+
 ## Install modes
 
 ### 1. Run the sidecar only
@@ -134,7 +154,7 @@ bash scripts/install.sh --install-skill
 Use this when you only want the local API and durable state:
 
 ```bash
-npm install
+npm ci
 npm run build
 npm run dev
 ```
@@ -151,7 +171,7 @@ Use this when you want the repo copied into `$CODEX_HOME/skills/openclaw-manager
 Use this when you want to edit code, rebuild often, and run checks:
 
 ```bash
-npm install
+npm ci
 npm run check
 npm run build
 npm run dev
@@ -166,63 +186,19 @@ Typical values:
 ```env
 OPENCLAW_MANAGER_STATE_ROOT=
 OPENCLAW_MANAGER_NODE_ID=local-node-01
+OPENCLAW_MANAGER_BIND_HOST=127.0.0.1
 OPENCLAW_MANAGER_SIDECAR_URL=http://127.0.0.1:4318
 OPENCLAW_MANAGER_NO_AUTOSTART=0
+OPENCLAW_MANAGER_ALLOW_REMOTE_SIDECAR=0
 PORT=4318
 ```
 
-Default state root:
+Defaults:
 
-```text
-~/.openclaw/skills/manager/
-```
-
-State layout:
-
-```text
-sessions/<session_id>/session.json
-sessions/<session_id>/summary.md
-sessions/<session_id>/attention.json
-sessions/<session_id>/share/
-sessions/<session_id>/artifacts/
-sessions/<session_id>/runs/<run_id>/run.json
-sessions/<session_id>/runs/<run_id>/events.jsonl
-sessions/<session_id>/runs/<run_id>/spool.jsonl
-sessions/<session_id>/runs/<run_id>/checkpoint.json
-sessions/<session_id>/runs/<run_id>/skill_traces.jsonl
-indexes/sessions.json
-indexes/active_sessions.json
-indexes/attention_queue.json
-indexes/thread_shadows.json
-indexes/promotion_queue.json
-indexes/capability_facts.jsonl
-connectors/bindings.json
-connectors/configs.json
-connectors/inbox/
-snapshots/
-exports/
-```
-
-## Run
-
-Development:
-
-```bash
-npm run dev
-```
-
-Production-style local run:
-
-```bash
-npm run build
-npm start
-```
-
-Bootstrap the runtime and inspect the registered commands:
-
-```bash
-npm run bootstrap
-```
+- state root: `~/.openclaw/skills/manager/`
+- bind host: `127.0.0.1`
+- port: `4318`
+- autostart: disabled until you explicitly allow it once
 
 ## Local commands
 
@@ -249,7 +225,7 @@ Once the sidecar is running, the shortest useful flow is:
 3. review priorities with `/focus`
 4. read the working digest with `/digest`
 
-That flow lets you move from observation to managed work without turning every chat into a full session too early.
+That lets you move from observation to managed work without turning every chat into a full session too early.
 
 ## Shadow-first behavior
 
@@ -285,6 +261,14 @@ Otherwise the manager still tracks the thread locally and exposes it through `/t
 
 ## Sidecar API
 
+Default local address:
+
+```text
+http://127.0.0.1:4318
+```
+
+The sidecar is loopback-only by default and is not exposed to LAN or the public internet unless you explicitly reconfigure the bind host.
+
 - `GET /health`
 - `GET /sessions`
 - `GET /sessions/map`
@@ -312,12 +296,6 @@ Otherwise the manager still tracks the thread locally and exposes it through `/t
 - `GET /exports/capability-facts`
 - `GET /exports/capability-facts/anonymized`
 
-Default local address:
-
-```text
-http://127.0.0.1:4318
-```
-
 ## Connector model
 
 Each external source is normalized before it reaches the control plane.
@@ -329,14 +307,12 @@ Currently implemented source adapters:
 - Email
 - GitHub
 
-Each adapter:
+Connector configs are stored locally in `connectors/configs.json`. Real secrets stay in local environment variables or private config files, not in git.
 
-1. normalizes source-specific payloads into a canonical inbound message
-2. resolves existing thread bindings
-3. updates or creates a `ThreadShadow`
-4. promotes only when promotion rules say the thread deserves full durable state
+Important boundary:
 
-Webhook-style ingest and file/body-backed poll flows are both supported.
+- bootstrap networking: loopback-only health checks
+- connector networking: only happens after you explicitly configure the relevant connector
 
 ## Capability facts and exports
 
@@ -369,11 +345,29 @@ Set `OPENCLAW_MANAGER_STATE_ROOT` in `.env.local` if you do not want the default
 ~/.openclaw/skills/manager/
 ```
 
+### Bootstrap says `consent_required`
+
+That means you have not yet allowed future automatic sidecar startup.
+
+Either:
+
+```bash
+npm run dev
+```
+
+or:
+
+```bash
+npm run consent:autostart
+npm run bootstrap
+```
+
 ### Sidecar did not start
 
 Run:
 
 ```bash
+npm ci
 npm run build
 npm run dev
 ```
@@ -395,6 +389,7 @@ Confirm that `$CODEX_HOME/skills/openclaw-manager` exists and contains `SKILL.md
 - event schema: [docs/event-schema.md](docs/event-schema.md)
 - connector protocol: [docs/connector-protocol.md](docs/connector-protocol.md)
 - capability facts: [docs/capability-facts.md](docs/capability-facts.md)
+- audit response: [docs/security-audit-response.md](docs/security-audit-response.md)
 
 ## Verify before publishing changes
 
@@ -402,6 +397,7 @@ Confirm that `$CODEX_HOME/skills/openclaw-manager` exists and contains `SKILL.md
 npm run check
 npm run build
 node scripts/smoke-test.cjs
+node scripts/security-smoke.cjs
 ```
 
 ## License

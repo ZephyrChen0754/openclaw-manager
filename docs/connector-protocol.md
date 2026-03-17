@@ -38,3 +38,5 @@ Implemented adapters:
 - GitHub
 
 Connector configs are stored locally in `connectors/configs.json`. Real secrets stay in local environment variables or private config files, not in git.
+
+Connectors do not perform external work until you explicitly configure the relevant connector. Bootstrap networking remains separate and loopback-only.

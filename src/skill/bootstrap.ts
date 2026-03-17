@@ -1,6 +1,3 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { spawn } from 'node:child_process';
 import { FsStore } from '../storage/fs-store';
 import { EventService } from '../control-plane/event-service';
 import { RunService } from '../control-plane/run-service';
@@ -14,78 +11,132 @@ import { ShadowService } from '../control-plane/shadow-service';
 import { SkillTraceService } from '../telemetry/skill-trace';
 import { CapabilityFactService } from '../telemetry/capability-facts';
 import { buildCommandRegistry } from './commands';
+import {
+  isAutostartDisabled,
+  isServerProcess,
+  readManagerSettings,
+  resolveBindHost,
+  resolveSidecarBaseUrl,
+} from './local-config';
+import { checkSidecarHealth } from './sidecar-health';
+import { launchSidecarProcess } from './sidecar-launcher';
+import { updateAutostartConsent } from './autostart-consent';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const sidecarBaseUrl = () => {
-  const port = Number(process.env.PORT || 4318);
-  return process.env.OPENCLAW_MANAGER_SIDECAR_URL || `http://127.0.0.1:${port}`;
+export interface SidecarStatus {
+  status: 'running' | 'launched' | 'consent_required' | 'autostart_disabled' | 'launch_failed';
+  reason: string | null;
+  consent_required: boolean;
+  launched: boolean;
+  already_running: boolean;
+  base_url: string;
+  bind_host: string;
+  next_steps: string[];
+}
+
+const baseSidecarStatus = () => ({
+  base_url: resolveSidecarBaseUrl(),
+  bind_host: resolveBindHost(),
+});
+
+const sidecarNextSteps = (status: SidecarStatus['status']) => {
+  if (status === 'consent_required') {
+    return [
+      'Review the local-only sidecar behavior in SECURITY.md.',
+      'Run "npm run consent:autostart" to allow future automatic startup.',
+      'Or start the sidecar manually with "npm run dev".',
+    ];
+  }
+
+  if (status === 'autostart_disabled' || status === 'launch_failed') {
+    return [
+      'Start the loopback-only sidecar manually with "npm run dev".',
+      'Run "npm run consent:autostart" if you want future bootstrap runs to auto-start the sidecar.',
+    ];
+  }
+
+  return [];
 };
 
-const checkSidecarHealth = async () => {
-  try {
-    const response = await fetch(`${sidecarBaseUrl()}/health`);
-    return response.ok;
-  } catch {
-    return false;
-  }
-};
-
-const resolveServerCommand = async () => {
-  const distServer = path.resolve(process.cwd(), 'dist', 'api', 'server.js');
-  try {
-    await fs.access(distServer);
-    return [process.execPath, [distServer]] as const;
-  } catch {
-    const tsxCli = path.resolve(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs');
-    return [process.execPath, [tsxCli, path.resolve(process.cwd(), 'src', 'api', 'server.ts')]] as const;
-  }
-};
-
-export const ensureSidecarRunning = async () => {
-  if (process.env.OPENCLAW_MANAGER_SERVER_PROCESS === '1' || process.env.OPENCLAW_MANAGER_NO_AUTOSTART === '1') {
-    return {
-      already_running: await checkSidecarHealth(),
-      launched: false,
-      base_url: sidecarBaseUrl(),
-    };
-  }
+export const ensureSidecarRunning = async (): Promise<SidecarStatus> => {
+  const store = new FsStore();
+  await store.ensureLayout();
 
   if (await checkSidecarHealth()) {
     return {
-      already_running: true,
+      ...baseSidecarStatus(),
+      status: 'running',
+      reason: null,
+      consent_required: false,
       launched: false,
-      base_url: sidecarBaseUrl(),
+      already_running: true,
+      next_steps: [],
     };
   }
 
-  const [command, args] = await resolveServerCommand();
-  const child = spawn(command, args, {
-    cwd: process.cwd(),
-    detached: true,
-    stdio: 'ignore',
-    env: {
-      ...process.env,
-      OPENCLAW_MANAGER_SERVER_PROCESS: '1',
-    },
-  });
-  child.unref();
+  if (isServerProcess()) {
+    return {
+      ...baseSidecarStatus(),
+      status: 'autostart_disabled',
+      reason: 'sidecar_process_bootstrap_skipped_inside_server',
+      consent_required: false,
+      launched: false,
+      already_running: false,
+      next_steps: sidecarNextSteps('autostart_disabled'),
+    };
+  }
+
+  if (isAutostartDisabled()) {
+    return {
+      ...baseSidecarStatus(),
+      status: 'autostart_disabled',
+      reason: 'autostart_disabled_by_environment',
+      consent_required: false,
+      launched: false,
+      already_running: false,
+      next_steps: sidecarNextSteps('autostart_disabled'),
+    };
+  }
+
+  const settings = await readManagerSettings(store);
+  if (!settings.sidecar_autostart_consent) {
+    return {
+      ...baseSidecarStatus(),
+      status: 'consent_required',
+      reason: 'sidecar_autostart_not_confirmed',
+      consent_required: true,
+      launched: false,
+      already_running: false,
+      next_steps: sidecarNextSteps('consent_required'),
+    };
+  }
+
+  await launchSidecarProcess();
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
     if (await checkSidecarHealth()) {
       return {
-        already_running: false,
+        ...baseSidecarStatus(),
+        status: 'launched',
+        reason: null,
+        consent_required: false,
         launched: true,
-        base_url: sidecarBaseUrl(),
+        already_running: false,
+        next_steps: [],
       };
     }
     await wait(300);
   }
 
   return {
+    ...baseSidecarStatus(),
+    status: 'launch_failed',
+    reason: 'sidecar_health_check_failed_after_launch',
+    consent_required: false,
+    launched: false,
     already_running: false,
-    launched: true,
-    base_url: sidecarBaseUrl(),
+    next_steps: sidecarNextSteps('launch_failed'),
   };
 };
 
@@ -138,6 +189,12 @@ export const bootstrapManagerRuntime = async () => {
 
 if (require.main === module) {
   (async () => {
+    if (process.argv.includes('--allow-autostart')) {
+      await updateAutostartConsent('allow', 'bootstrap_flag');
+    } else if (process.argv.includes('--deny-autostart')) {
+      await updateAutostartConsent('deny', 'bootstrap_flag');
+    }
+
     const sidecar = await ensureSidecarRunning();
     const runtime = await bootstrapManagerRuntime();
     process.stdout.write(

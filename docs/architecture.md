@@ -4,9 +4,9 @@ OpenClaw Manager is split into seven cooperating layers:
 
 1. `src/skill/*`
    - OpenClaw-facing bootstrap, commands, and hooks
-   - startup checks, background maintenance, and skill wrappers
+   - consent-gated sidecar startup checks, background maintenance, and skill wrappers
 2. `src/api/*`
-   - local sidecar API
+   - local loopback-only sidecar API by default
    - canonical ingress for thread shadows, sessions, connector updates, digests, and focus views
 3. `src/control-plane/*`
    - `ThreadShadow` observation and promotion

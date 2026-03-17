@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { defaultStateRoot } from '../types';
+import { ManagerSettings, defaultStateRoot } from '../types';
 
 export class FsStore {
   readonly rootDir: string;
@@ -39,6 +39,10 @@ export class FsStore {
 
   get exportsDir() {
     return path.join(this.rootDir, 'exports');
+  }
+
+  get settingsFile() {
+    return path.join(this.rootDir, 'settings.json');
   }
 
   get capabilityFactsFile() {
@@ -130,6 +134,11 @@ export class FsStore {
     await this.writeJsonIfMissing(this.promotionQueueFile, []);
     await this.writeJsonIfMissing(path.join(this.connectorsDir, 'bindings.json'), []);
     await this.writeJsonIfMissing(this.connectorConfigsFile, []);
+    await this.writeJsonIfMissing(this.settingsFile, {
+      sidecar_autostart_consent: false,
+      consent_recorded_at: null,
+      consent_source: 'default',
+    } satisfies ManagerSettings);
     await this.writeTextIfMissing(this.capabilityFactsFile, '');
   }
 
