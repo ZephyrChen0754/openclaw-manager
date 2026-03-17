@@ -4,9 +4,33 @@ OpenClaw Manager is a standalone local control plane for OpenClaw.
 
 It keeps work filesystem-first under `~/.openclaw/skills/manager/` and uses a shadow-first model:
 
-- every thread is observed as a lightweight `ThreadShadow`
+- every thread starts as a lightweight `ThreadShadow`
 - only meaningful threads are promoted into durable `Session` + `Run` state
-- local summaries, checkpoints, attention, snapshots, and capability facts stay under local control
+- summaries, checkpoints, attention, snapshots, and capability facts stay local
+
+It is not a cloud service. It is a local skill plus sidecar that runs on your machine.
+
+## Who this is for
+
+- OpenClaw users who want a local manager for real work threads
+- developers and power users who are comfortable installing Node-based tools
+- teams that want resumable local state without uploading raw chat logs elsewhere
+
+## Who this is not for
+
+- people looking for a zero-config browser SaaS
+- users who do not want to install Node.js or run a local sidecar
+- anyone expecting a hosted multi-user dashboard out of the box
+
+## What problem it solves
+
+OpenClaw conversations often disappear into long threads. OpenClaw Manager fixes that by:
+
+- observing every thread before it becomes durable work
+- promoting only the threads that deserve a managed session
+- keeping checkpoints and attention local
+- making it fast to resume work without re-reading the whole thread
+- turning closed work into reusable capability facts and reports
 
 ## Core model
 
@@ -64,6 +88,19 @@ git clone https://github.com/ZephyrChen0754/openclaw-manager.git
 cd openclaw-manager
 ```
 
+## Fastest path
+
+If you just want to try it quickly:
+
+```bash
+npm install
+npm run build
+npm run bootstrap
+npm run dev
+```
+
+That gives you a running local sidecar at `http://127.0.0.1:4318`.
+
 ## One-click install
 
 ### Windows
@@ -88,6 +125,36 @@ Install the runtime and also copy the skill into `$CODEX_HOME/skills/openclaw-ma
 
 ```bash
 bash scripts/install.sh --install-skill
+```
+
+## Install modes
+
+### 1. Run the sidecar only
+
+Use this when you only want the local API and durable state:
+
+```bash
+npm install
+npm run build
+npm run dev
+```
+
+### 2. Install as a local skill
+
+Use this when you want the repo copied into `$CODEX_HOME/skills/openclaw-manager`:
+
+- Windows: `powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -InstallSkill`
+- macOS/Linux: `bash scripts/install.sh --install-skill`
+
+### 3. Local development
+
+Use this when you want to edit code, rebuild often, and run checks:
+
+```bash
+npm install
+npm run check
+npm run build
+npm run dev
 ```
 
 ## Configure
@@ -173,6 +240,17 @@ npm run bootstrap
 - `/promote <shadow>`
 - `/archive-thread <shadow>`
 
+## 3-minute quickstart
+
+Once the sidecar is running, the shortest useful flow is:
+
+1. inspect observed work with `/threads`
+2. promote the right thread with `/promote <shadow>`
+3. review priorities with `/focus`
+4. read the working digest with `/digest`
+
+That flow lets you move from observation to managed work without turning every chat into a full session too early.
+
 ## Shadow-first behavior
 
 Inbound messages first update a `ThreadShadow`.
@@ -200,7 +278,7 @@ This means:
 
 - three greetings still stay shadowed
 - a task request plus useful context promotes
-- a task request plus `ok/好的/收到` stays shadowed
+- a task request plus a short acknowledgement reply stays shadowed
 - connector follow-up alone becomes a candidate shadow, not a promoted session
 
 Otherwise the manager still tracks the thread locally and exposes it through `/threads`, `/tasks`, and `/focus`.
@@ -272,6 +350,43 @@ Closed work produces:
 - anonymized fact export payloads
 
 Markdown and HTML exports are generated locally and remain redacted by default.
+
+## Troubleshooting
+
+### `node` or `npm` not found
+
+Install Node.js 20+ and make sure both `node` and `npm` are available in your shell.
+
+### Port `4318` already in use
+
+Set a different `PORT` value in `.env.local`, then start the sidecar again.
+
+### Wrong or missing state root
+
+Set `OPENCLAW_MANAGER_STATE_ROOT` in `.env.local` if you do not want the default:
+
+```text
+~/.openclaw/skills/manager/
+```
+
+### Sidecar did not start
+
+Run:
+
+```bash
+npm run build
+npm run dev
+```
+
+Then check:
+
+```text
+http://127.0.0.1:4318/health
+```
+
+### Skill installed but not visible
+
+Confirm that `$CODEX_HOME/skills/openclaw-manager` exists and contains `SKILL.md`, `skill.yaml`, and the `src/` tree.
 
 ## Documentation
 

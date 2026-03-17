@@ -1,6 +1,6 @@
 name: openclaw-manager
 display_name: OpenClaw Manager
-version: 0.3.0
+version: 0.3.1
 description: >
   OpenClaw-native manager skill that adds a local control plane, durable state,
   shadow-first thread interception, connector normalization, attention views,
